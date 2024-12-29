@@ -6,10 +6,10 @@ resource "local_file" "rolesanywhere_ca_guide" {
   ) ? 1 : 0
 
   content = sensitive(templatefile("${path.module}/templates/rolesanywhere_ca_guide.tftpl", {
-    trust_anchor_arn = aws_rolesanywhere_trust_anchor.on_prem[0].arn
-    profile_arn      = aws_rolesanywhere_profile.on_prem[0].arn
-    role_arn         = aws_iam_role.rolesanywhere_on_prem[0].arn
-    role_name        = split("/", aws_iam_role.rolesanywhere_on_prem[0].arn)[1]
+    trust_anchor_arn = try(aws_rolesanywhere_trust_anchor.on_prem[0].arn, "<YET UNAVAILABLE>")
+    profile_arn      = try(aws_rolesanywhere_profile.on_prem[0].arn, "<YET UNAVAILABLE>")
+    role_arn         = try(aws_iam_role.rolesanywhere_on_prem[0].arn, "<YET UNAVAILABLE>")
+    role_name        = try(split("/", aws_iam_role.rolesanywhere_on_prem[0].arn)[1], "<YET UNAVAILABLE>")
     account_id       = data.aws_caller_identity.current.account_id
     aws_region       = data.aws_region.current.name
   }))

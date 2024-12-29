@@ -17,7 +17,7 @@ variable "environment" {
 variable "component" {
   type        = string
   description = "The TF component name"
-  default     = "network"
+  default     = "aws-anywhere"
 }
 
 variable "tf_state_bucket_name_prefix" {
