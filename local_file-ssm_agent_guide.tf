@@ -1,7 +1,7 @@
 resource "local_file" "ssm_agent_guide" {
   count = (
     var.iam_roles_anywhere_enabled &&
-    aws_ssm_parameter.on_prem_ca_cert_bundle[0].value != "N/A" &&
+    try(aws_ssm_parameter.on_prem_ca_cert_bundle[0].value != "N/A", false) &&
     var.ssm_hybrid_activation_registred &&
     var.generate_ssm_agent_guide_md
   ) ? 1 : 0

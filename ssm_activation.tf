@@ -1,7 +1,7 @@
 resource "aws_iam_role_policy_attachment" "on_prem_ssm_agent" {
   count = (
     var.iam_roles_anywhere_enabled &&
-    aws_ssm_parameter.on_prem_ca_cert_bundle[0].value != "N/A" &&
+    try(aws_ssm_parameter.on_prem_ca_cert_bundle[0].value != "N/A", false) &&
     var.ssm_hybrid_activation_registred
   ) ? 1 : 0
 
@@ -12,7 +12,7 @@ resource "aws_iam_role_policy_attachment" "on_prem_ssm_agent" {
 resource "aws_ssm_activation" "on_prem" {
   count = (
     var.iam_roles_anywhere_enabled &&
-    aws_ssm_parameter.on_prem_ca_cert_bundle[0].value != "N/A" &&
+    try(aws_ssm_parameter.on_prem_ca_cert_bundle[0].value != "N/A", false) &&
     var.ssm_hybrid_activation_registred
   ) ? 1 : 0
 

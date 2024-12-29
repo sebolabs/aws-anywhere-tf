@@ -36,7 +36,7 @@ output "guide_bind_dns_path" {
 output "rolesanywhere_signing_helper_props" {
   value = (
     var.iam_roles_anywhere_enabled &&
-    aws_ssm_parameter.on_prem_ca_cert_bundle[0].value != "N/A"
+    try(aws_ssm_parameter.on_prem_ca_cert_bundle[0].value != "N/A", false)
     ) ? {
     trust_anchor_arn = aws_rolesanywhere_trust_anchor.on_prem[0].arn
     role_arn         = aws_iam_role.rolesanywhere_on_prem[0].arn
@@ -47,7 +47,7 @@ output "rolesanywhere_signing_helper_props" {
 output "guide_rolesanywhere_ca_path" {
   value = (
     var.iam_roles_anywhere_enabled &&
-    aws_ssm_parameter.on_prem_ca_cert_bundle[0].value != "N/A" &&
+    try(aws_ssm_parameter.on_prem_ca_cert_bundle[0].value != "N/A", false) &&
     var.generate_rolesanywhere_ca_guide_md
   ) ? local_file.rolesanywhere_ca_guide[0].filename : null
 }
@@ -62,7 +62,7 @@ output "aws_ssm_activation" {
 output "guide_ssm_agent_path" {
   value = (
     var.iam_roles_anywhere_enabled &&
-    aws_ssm_parameter.on_prem_ca_cert_bundle[0].value != "N/A" &&
+    try(aws_ssm_parameter.on_prem_ca_cert_bundle[0].value != "N/A", false) &&
     var.ssm_hybrid_activation_registred &&
     var.generate_ssm_agent_guide_md
   ) ? local_file.ssm_agent_guide[0].filename : null
@@ -71,7 +71,7 @@ output "guide_ssm_agent_path" {
 output "eks_hybrid_nodes_iam_role_arn" {
   value = (
     var.iam_roles_anywhere_enabled &&
-    aws_ssm_parameter.on_prem_ca_cert_bundle[0].value != "N/A" &&
+    try(aws_ssm_parameter.on_prem_ca_cert_bundle[0].value != "N/A", false) &&
     var.eks_hybrid_nodes_enabled
   ) ? aws_iam_role.eks_hybrid_nodes[0].arn : null
 }

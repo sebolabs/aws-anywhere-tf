@@ -1,7 +1,7 @@
 resource "aws_rolesanywhere_trust_anchor" "on_prem" {
   count = (
     var.iam_roles_anywhere_enabled &&
-    aws_ssm_parameter.on_prem_ca_cert_bundle[0].value != "N/A"
+    try(aws_ssm_parameter.on_prem_ca_cert_bundle[0].value != "N/A", false)
   ) ? 1 : 0
 
   name    = "${local.aws_account_level_id}-on-prem"
@@ -22,7 +22,7 @@ resource "aws_rolesanywhere_trust_anchor" "on_prem" {
 data "aws_iam_policy_document" "rolesanywhere_trust" {
   count = (
     var.iam_roles_anywhere_enabled &&
-    aws_ssm_parameter.on_prem_ca_cert_bundle[0].value != "N/A"
+    try(aws_ssm_parameter.on_prem_ca_cert_bundle[0].value != "N/A", false)
   ) ? 1 : 0
 
   statement {
@@ -67,7 +67,7 @@ data "aws_iam_policy_document" "rolesanywhere_trust" {
 resource "aws_iam_role" "rolesanywhere_on_prem" {
   count = (
     var.iam_roles_anywhere_enabled &&
-    aws_ssm_parameter.on_prem_ca_cert_bundle[0].value != "N/A"
+    try(aws_ssm_parameter.on_prem_ca_cert_bundle[0].value != "N/A", false)
   ) ? 1 : 0
 
   name               = "${local.aws_account_level_id}-rolesanywhere-on-prem"
@@ -82,7 +82,7 @@ resource "aws_iam_role" "rolesanywhere_on_prem" {
 resource "aws_iam_role_policy_attachment" "on_prem_vpc_full_access" {
   count = (
     var.iam_roles_anywhere_enabled &&
-    aws_ssm_parameter.on_prem_ca_cert_bundle[0].value != "N/A"
+    try(aws_ssm_parameter.on_prem_ca_cert_bundle[0].value != "N/A", false)
   ) ? 1 : 0
 
   role       = aws_iam_role.rolesanywhere_on_prem[0].name
@@ -92,7 +92,7 @@ resource "aws_iam_role_policy_attachment" "on_prem_vpc_full_access" {
 resource "aws_rolesanywhere_profile" "on_prem" {
   count = (
     var.iam_roles_anywhere_enabled &&
-    aws_ssm_parameter.on_prem_ca_cert_bundle[0].value != "N/A"
+    try(aws_ssm_parameter.on_prem_ca_cert_bundle[0].value != "N/A", false)
   ) ? 1 : 0
 
   name      = "${local.aws_account_level_id}-on-prem"

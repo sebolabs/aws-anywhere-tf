@@ -1,7 +1,6 @@
 resource "local_file" "rolesanywhere_ca_guide" {
   count = (
     var.iam_roles_anywhere_enabled &&
-    aws_ssm_parameter.on_prem_ca_cert_bundle[0].value != "N/A" &&
     var.generate_rolesanywhere_ca_guide_md
   ) ? 1 : 0
 

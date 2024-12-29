@@ -21,7 +21,7 @@ locals {
 data "aws_iam_policy_document" "eks_hybrid_nodes_trust" {
   count = (
     var.iam_roles_anywhere_enabled &&
-    aws_ssm_parameter.on_prem_ca_cert_bundle[0].value != "N/A" &&
+    try(aws_ssm_parameter.on_prem_ca_cert_bundle[0].value != "N/A", false) &&
     var.eks_hybrid_nodes_enabled
   ) ? 1 : 0
 
@@ -50,7 +50,7 @@ data "aws_iam_policy_document" "eks_hybrid_nodes_trust" {
 resource "aws_iam_role" "eks_hybrid_nodes" {
   count = (
     var.iam_roles_anywhere_enabled &&
-    aws_ssm_parameter.on_prem_ca_cert_bundle[0].value != "N/A" &&
+    try(aws_ssm_parameter.on_prem_ca_cert_bundle[0].value != "N/A", false) &&
     var.eks_hybrid_nodes_enabled
   ) ? 1 : 0
 
@@ -65,7 +65,7 @@ resource "aws_iam_role" "eks_hybrid_nodes" {
 data "aws_iam_policy_document" "eks_hybrid_nodes_descr_cluster" {
   count = (
     var.iam_roles_anywhere_enabled &&
-    aws_ssm_parameter.on_prem_ca_cert_bundle[0].value != "N/A" &&
+    try(aws_ssm_parameter.on_prem_ca_cert_bundle[0].value != "N/A", false) &&
     var.eks_hybrid_nodes_enabled
   ) ? 1 : 0
 
@@ -79,7 +79,7 @@ data "aws_iam_policy_document" "eks_hybrid_nodes_descr_cluster" {
 resource "aws_iam_policy" "eks_hybrid_nodes_descr_cluster" {
   count = (
     var.iam_roles_anywhere_enabled &&
-    aws_ssm_parameter.on_prem_ca_cert_bundle[0].value != "N/A" &&
+    try(aws_ssm_parameter.on_prem_ca_cert_bundle[0].value != "N/A", false) &&
     var.eks_hybrid_nodes_enabled
   ) ? 1 : 0
 
@@ -94,7 +94,7 @@ resource "aws_iam_policy" "eks_hybrid_nodes_descr_cluster" {
 resource "aws_iam_role_policy_attachment" "eks_hybrid_nodes_eks_descr_cluster" {
   count = (
     var.iam_roles_anywhere_enabled &&
-    aws_ssm_parameter.on_prem_ca_cert_bundle[0].value != "N/A" &&
+    try(aws_ssm_parameter.on_prem_ca_cert_bundle[0].value != "N/A", false) &&
     var.eks_hybrid_nodes_enabled
   ) ? 1 : 0
 
@@ -105,7 +105,7 @@ resource "aws_iam_role_policy_attachment" "eks_hybrid_nodes_eks_descr_cluster" {
 resource "aws_iam_role_policy_attachment" "eks_hybrid_nodes_ecr_pull" {
   count = (
     var.iam_roles_anywhere_enabled &&
-    aws_ssm_parameter.on_prem_ca_cert_bundle[0].value != "N/A" &&
+    try(aws_ssm_parameter.on_prem_ca_cert_bundle[0].value != "N/A", false) &&
     var.eks_hybrid_nodes_enabled
   ) ? 1 : 0
 
@@ -116,7 +116,7 @@ resource "aws_iam_role_policy_attachment" "eks_hybrid_nodes_ecr_pull" {
 resource "aws_rolesanywhere_profile" "eks_hybrid_nodes" {
   count = (
     var.iam_roles_anywhere_enabled &&
-    aws_ssm_parameter.on_prem_ca_cert_bundle[0].value != "N/A" &&
+    try(aws_ssm_parameter.on_prem_ca_cert_bundle[0].value != "N/A", false) &&
     var.eks_hybrid_nodes_enabled
   ) ? 1 : 0
 
