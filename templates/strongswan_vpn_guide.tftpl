@@ -68,7 +68,6 @@ ipsec restart
 ```
 
 ### ONE-OFF: System config
-
 ```bash
 # General:
 # Ensure StrongSwan does not install routes automatically
@@ -95,7 +94,6 @@ sysctl -w net.ipv4.conf.Tunnel2.disable_policy=1
 
 ### ON REBOOT: Network/firewall config (to automate)
 > NOTE: This section can be automated, e.g., with the use of the Strongswan (IPSec) `leftupdown` option.
-
 ```bash
 # Tunnel1:
 # Create and configure the VTI interface for Tunnel1
@@ -128,7 +126,6 @@ iptables -t nat -A POSTROUTING --destination ${aws_example_vpc_cidr} --source ${
 
 ## [OPTIONAL] Local network for VPN traffic config
 ### Network/firewall config allowing routing through VPN for any local host
-
 ```bash
 # Tunnel1:
 # Enable NAT (Masquerade) for traffic from local network going through the VPN
@@ -148,14 +145,12 @@ iptables -A FORWARD -i Tunnel2 -o eth0 -d ${aws_example_vpc_cidr} -j ACCEPT # pe
 ```
 
 ### Local host static route config
-
 ```bash
 sudo route -n add ${aws_example_vpc_cidr} ${on_prem_vpn_host_ip} # per VPC CIDR
 ```
 
 ## Disclaimer
 The above has been confirmed working with Ubuntu 24.04 running on Raspberry Pi 4.
-
 ```bash
 $ uname -a
 Linux pi 6.8.0-1016-raspi #18-Ubuntu SMP PREEMPT_DYNAMIC Fri Nov 22 11:55:16 UTC 2024 aarch64 aarch64 aarch64 GNU/Linux

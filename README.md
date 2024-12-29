@@ -4,6 +4,7 @@ It contains the relevant configurations required for performing different types 
 - Site-to-Site VPN
 - DNS forwarding for AWS services/resources domain names resolution
 - IAM Roles Anywhere
+- SSM Agent
 - EKS Hybrid Nodes
 
 > NOTE: The configuration contained here was used for a Proof of Concept (PoC) and might not work out of the box for everyone. While the versions of various components used to configure individual pieces are listed in the corresponding `templates/tftpl` files, other configuration elements and peripherals may impact the setup and require additional configurations.

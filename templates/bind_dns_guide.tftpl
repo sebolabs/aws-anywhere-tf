@@ -5,7 +5,6 @@ Assumptions:
 - your VPN connection to AWS is established and firewalls rules are in place
 
 ## DNS zone and forwarders config
-
 ```bash
 $ vim /etc/bind/named.conf.local
 
@@ -39,7 +38,6 @@ $ systemctl restart bind9
 ```
 
 ## Default local DNS resolver config
-
 ```bash
 $ vim /etc/systemd/resolved.conf
 
@@ -54,7 +52,6 @@ $ systemctl restart systemd-resolved
 
 ## Test
 > Your AWS region: `${aws_region}`
-
 ```bash
 %{ for vpc_eif in vpc_interface_endpoints ~}
 $ dig ${vpc_eif}.${aws_region}.amazonaws.com +short

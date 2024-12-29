@@ -35,8 +35,6 @@ module "transit_vpc" {
   default_security_group_tags   = { Name = "${local.aws_account_level_id}-default" }
 }
 
-# TODO: Internet monitor ?
-
 ### ROUTING CONFIGURATION ##########################################################################
 
 # NOTE: for testing only
