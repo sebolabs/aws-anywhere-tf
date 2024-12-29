@@ -1,0 +1,83 @@
+# SSM Agent @ Ubuntu 24.04 ~ Configuration Guide
+
+Assumptions:
+- AWS Systems Manager is enabled (from within its Settings in AWS Management Console)
+- IAM Roles Anywhere is configured and working (see GUIDE_RolesAnywhere_CA.md)
+
+## Install Amazon SSM Agent
+```bash
+curl -sSL https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/debian_arm64/amazon-ssm-agent.deb -o /tmp/amazon-ssm-agent.deb
+
+dpkg -i /tmp/amazon-ssm-agent.deb
+
+systemctl stop amazon-ssm-agent
+```
+
+## Register server and start the agent
+```bash
+$ amazon-ssm-agent -register \
+  -id "${activation_id}" \
+  -code "${activation_code}" \
+  -region ${aws_region}
+
+Error occurred fetching the seelog config file path:  open /etc/amazon/ssm/seelog.xml: no such file or directory
+Initializing new seelog logger
+New Seelog Logger Creation Complete
+2024-12-17 13:03:17.8680 WARN Could not read InstanceFingerprint file: InstanceFingerprint does not exist
+2024-12-17 13:03:17.8681 INFO No initial fingerprint detected, generating fingerprint file...
+2024-12-17 13:03:18.3327 INFO Successfully registered the instance with AWS SSM using Managed instance-id: mi-0a99c71306040b3a8
+
+$ systemctl start amazon-ssm-agent
+$ systemctl status amazon-ssm-agent
+
+● amazon-ssm-agent.service - amazon-ssm-agent
+     Loaded: loaded (/usr/lib/systemd/system/amazon-ssm-agent.service; enabled; preset: enabled)
+     Active: active (running) since Tue 2024-12-17 13:03:55 CET; 2s ago
+   Main PID: 21279 (amazon-ssm-agen)
+      Tasks: 20 (limit: 8675)
+     Memory: 23.4M (peak: 24.2M)
+        CPU: 485ms
+     CGroup: /system.slice/amazon-ssm-agent.service
+             ├─21279 /usr/bin/amazon-ssm-agent
+             └─21294 /usr/bin/ssm-agent-worker
+
+Dec 17 13:03:55 pi amazon-ssm-agent[21279]: 2024-12-17 13:03:55.6190 INFO [amazon-ssm-agent] amazon-ssm-agent - v3.3.1345.0
+Dec 17 13:03:55 pi amazon-ssm-agent[21279]: 2024-12-17 13:03:55.6190 INFO [amazon-ssm-agent] OS: linux, Arch: arm64
+Dec 17 13:03:55 pi amazon-ssm-agent[21279]: 2024-12-17 13:03:55.6190 INFO [amazon-ssm-agent] Starting Core Agent
+Dec 17 13:03:55 pi amazon-ssm-agent[21279]: 2024-12-17 13:03:55.6193 INFO [CredentialRefresher] credentialRefresher has started
+Dec 17 13:03:55 pi amazon-ssm-agent[21279]: 2024-12-17 13:03:55.6193 INFO [CredentialRefresher] Starting credentials refresher loop
+Dec 17 13:03:55 pi amazon-ssm-agent[21279]: 2024-12-17 13:03:55.9183 INFO [CredentialRefresher] Credentials ready
+Dec 17 13:03:55 pi amazon-ssm-agent[21279]: 2024-12-17 13:03:55.9194 INFO [CredentialRefresher] Next credential rotation will be in 29.991622323216667 minutes
+Dec 17 13:03:56 pi amazon-ssm-agent[21279]: 2024-12-17 13:03:56.9678 INFO [amazon-ssm-agent] [LongRunningWorkerContainer] [WorkerProvider] Worker ssm-agent-worker is not running, starting worker process
+Dec 17 13:03:57 pi amazon-ssm-agent[21279]: 2024-12-17 13:03:56.9689 INFO [amazon-ssm-agent] [LongRunningWorkerContainer] [WorkerProvider] Worker ssm-agent-worker (pid:21294) started
+Dec 17 13:03:57 pi amazon-ssm-agent[21279]: 2024-12-17 13:03:56.9689 INFO [amazon-ssm-agent] [LongRunningWorkerContainer] Monitor long running worker health every 60 seconds
+```
+
+## Private connectivity confirmation
+```bash
+$ dig ssmmessages.${aws_region}.amazonaws.com +short
+172.18.6.245
+172.18.7.130
+
+$ grep 'websocket connection' /var/log/amazon/ssm/amazon-ssm-agent.log
+2024-12-17 14:42:24.5117 INFO [ssm-session-worker] [seb-gygor9ib3ihqg7q97sujv4jvdi] [DataBackend] [pluginName=Standard_Stream] Opening websocket connection to: wss://ssmmessages.${aws_region}.amazonaws.com/v1/data-channel/seb-gygor9ib3ihqg7q97sujv4jvdi?role=publish_subscribe
+2024-12-17 14:42:24.6649 INFO [ssm-session-worker] [seb-gygor9ib3ihqg7q97sujv4jvdi] [DataBackend] [pluginName=Standard_Stream] Successfully opened websocket connection to: 172.18.6.245:443
+2024-12-17 14:42:48.1920 INFO [ssm-session-worker] [seb-gygor9ib3ihqg7q97sujv4jvdi] [DataBackend] [pluginName=Standard_Stream] Successfully closed websocket connection to: 172.18.6.245:443
+```
+
+## Disclaimer
+The above has been confirmed working with Ubuntu 24.04 running on Raspberry Pi 4.
+
+```bash
+$ uname -a
+Linux pi 6.8.0-1016-raspi #18-Ubuntu SMP PREEMPT_DYNAMIC Fri Nov 22 11:55:16 UTC 2024 aarch64 aarch64 aarch64 GNU/Linux
+
+$ lsb_release -a
+Distributor ID:	Ubuntu
+Description:	Ubuntu 24.04.1 LTS
+Release:	24.04
+Codename:	noble
+
+$ amazon-ssm-agent -version
+SSM Agent version: 3.3.1345.0
+```

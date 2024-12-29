@@ -1,0 +1,136 @@
+# IAM RolesAnywhere @ Ubuntu 24.04 ~ CA & AWS Signing Helper Configuration Guide
+After installing `openssl`, below are the steps that must be performed to successfully set up IAM Roles Anywhere.
+
+Assumptions:
+- AWS CLI is installed https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html
+
+## Configure OpenSSL
+```bash
+$ vim /etc/ssl/openssl.cnf
+
+[...]
+[ v3_ca ]
+basicConstraints = critical,CA:true
+keyUsage = digitalSignature, keyCertSign
+
+[ v3_req ]
+basicConstraints = critical,CA:false
+keyUsage = digitalSignature
+[...]
+```
+
+## Set up directory structure
+```bash
+mkdir -p /etc/ssl/myca/{private,certs,csr,newcerts,crl}
+touch /etc/ssl/myca/index.txt
+echo 1000 > /etc/ssl/myca/serial
+chmod 700 /etc/ssl/myca/private
+```
+
+## Configure CA
+```bash
+# CA private key
+openssl genpkey -algorithm RSA -out /etc/ssl/myca/private/ca.key -pkeyopt rsa_keygen_bits:4096
+
+
+# CA certificate
+openssl req -x509 -new -nodes -key /etc/ssl/myca/private/ca.key -sha512 -days 3650 \
+  -out /etc/ssl/myca/certs/ca.crt \
+  -config /etc/ssl/openssl.cnf \
+  -extensions v3_ca \
+  -subj "/C=US/ST=MyState/L=MyCity/O=MyOrganization/OU=MyUnit/CN=MyCA"
+```
+
+## Generate certificate for Pi
+```bash
+# Private key
+openssl genpkey -algorithm RSA -out /etc/ssl/myca/private/pi.key -pkeyopt rsa_keygen_bits:4096
+
+# CSR
+openssl req -new -key /etc/ssl/myca/private/pi.key -sha512 \
+  -out /etc/ssl/myca/csr/pi.csr \
+  -config /etc/ssl/openssl.cnf \
+  -reqexts v3_req \
+  -subj "/C=US/ST=MyState/L=MyCity/O=MyOrganization/OU=MyUnit/CN=MyPi"
+
+# Sign CSR with CA
+openssl x509 -req -in /etc/ssl/myca/csr/pi.csr -days 365 -sha512 \
+  -CA /etc/ssl/myca/certs/ca.crt \
+  -CAkey /etc/ssl/myca/private/ca.key \
+  -CAcreateserial -out /etc/ssl/myca/certs/pi.crt \
+  -extfile /etc/ssl/openssl.cnf \
+  -extensions v3_req
+```
+
+## Test
+```bash
+# Get AWS Signing Helper
+wget https://rolesanywhere.amazonaws.com/releases/1.4.0/Aarch64/Linux/aws_signing_helper -O /opt/aws_signing_helper
+chmod +x /opt/aws_signing_helper
+
+# Test 1: obtain temporary AWS credentials only
+$ /opt/aws_signing_helper credential-process \
+  --certificate /etc/ssl/myca/certs/pi.crt \
+  --private-key /etc/ssl/myca/private/pi.key \
+  --trust-anchor-arn ${trust_anchor_arn} \
+  --profile-arn ${profile_arn} \
+  --role-arn ${role_arn} \
+  --region ${aws_region} \
+  | jq
+
+{
+  "Version": 1,
+  "AccessKeyId": "ASIA6DDGWYSN4PQ5HLKH",
+  "SecretAccessKey": "1n2thdMJoeAs6MaWLMHXX5cv3NAziwQifPkUj7Q9",
+  "SessionToken": "IQoJb3JpZ2luX2VjEHkaDGV1LWNlbnRyYWwtMSJHMEUCICHde0C+NmR+qcz6r9r5oQ4V7h...",
+  "Expiration": "2024-12-17T09:39:12Z"
+}
+
+# Test 2: in action, with AWS CLI
+$ vim ~/.aws/config
+
+[default]
+credential_process = /opt/aws_signing_helper credential-process --certificate /etc/ssl/myca/certs/pi.crt --private-key /etc/ssl/myca/private/pi.key --trust-anchor-arn ${trust_anchor_arn} --profile-arn ${profile_arn} --role-arn ${role_arn} --region ${aws_region}
+region = ${aws_region}
+
+$ aws sts get-caller-identity
+{
+    "UserId": "AROA6DDGWYSNQ42DFRCME:1b5f3bcb9fbee14b2140fea638f372786a06321c",
+    "Account": "${account_id}",
+    "Arn": "arn:aws:sts::${account_id}:assumed-role/${role_name}/1b5f4bcb9fbee14b4540fea638f312756a06311c"
+}
+
+# Expected behavior: PASS
+$ aws ec2 describe-internet-gateways \
+  --query "InternetGateways[*].[InternetGatewayId]" \
+  --output text
+
+igw-0fd6fc5b76f9b3537
+
+# Expected behavior: FAIL
+$ aws ec2 create-tags \
+  --resources igw-0fd6fc5b76f9b3537 \
+  --tags Key=Hello,Value=World
+
+An error occurred (UnauthorizedOperation) when calling the CreateTags operation: You are not authorized to perform this operation. [...]
+```
+
+## Disclaimer
+The above has been confirmed working with Ubuntu 24.04 running on Raspberry Pi 4.
+
+```bash
+$ uname -a
+Linux pi 6.8.0-1016-raspi #18-Ubuntu SMP PREEMPT_DYNAMIC Fri Nov 22 11:55:16 UTC 2024 aarch64 aarch64 aarch64 GNU/Linux
+
+$ lsb_release -a
+Distributor ID:	Ubuntu
+Description:	Ubuntu 24.04.1 LTS
+Release:	24.04
+Codename:	noble
+
+$ openssl version
+LibreSSL 3.3.6
+
+$ aws --version
+aws-cli/2.22.18 Python/3.12.6 Linux/6.8.0-1016-raspi exe/aarch64.ubuntu.24
+```

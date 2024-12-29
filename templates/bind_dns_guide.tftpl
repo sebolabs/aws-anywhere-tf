@@ -1,0 +1,80 @@
+# Bind @ Ubuntu 24.04 ~ DNS Forwarders Configuration Guide
+After installing `bind9`, below are the steps that must be performed to successfully set up DNS.
+
+Assumptions:
+- your VPN connection to AWS is established and firewalls rules are in place
+
+## DNS zone and forwarders config
+```bash
+$ vim /etc/bind/named.conf.local
+
+[...]
+zone "${aws_region}.amazonaws.com" {
+    type forward;
+    forward only; # NOTE: strict forwarding enforced
+    forwarders {
+%{ for index, ip in r53_inbound_resolver_ips ~}
+        ${ip};  # R53 Inbound Resolver IP #${index + 1}
+%{ endfor ~}
+    };
+};
+[...]
+
+$ vim /etc/bind/named.conf.options
+
+options {
+[...]
+    forwarders {
+        8.8.8.8;   # Google DNS
+        8.8.4.4;   # Google DNS
+    };
+    forward only;
+    dnssec-validation auto;
+    listen-on-v6 { none; };
+[...]
+};
+
+$ systemctl restart bind9
+```
+
+## Default local DNS resolver config
+```bash
+$ vim /etc/systemd/resolved.conf
+
+[...]
+[Resolve]
+DNS=127.0.0.1
+FallbackDNS=
+[...]
+
+$ systemctl restart systemd-resolved
+```
+
+## Test
+> Your AWS region: `${aws_region}`
+```bash
+%{ for vpc_eif in vpc_interface_endpoints ~}
+$ dig ${vpc_eif}.${aws_region}.amazonaws.com +short
+# should resolve to private IP(s); NOTE: it's `dkr.ecr` and not `ecr.dkr` when tested with `dig` or `nslookup`
+
+%{ endfor ~}
+```
+
+## Disclaimer
+The above has been confirmed working with Ubuntu 24.04 running on Raspberry Pi 4.
+
+```bash
+$ uname -a
+Linux pi 6.8.0-1016-raspi #18-Ubuntu SMP PREEMPT_DYNAMIC Fri Nov 22 11:55:16 UTC 2024 aarch64 aarch64 aarch64 GNU/Linux
+
+$ lsb_release -a
+Distributor ID:	Ubuntu
+Description:	Ubuntu 24.04.1 LTS
+Release:	24.04
+Codename:	noble
+
+$ dpkg -l bind9
+||/ Name           Version                    Architecture Description
++++-==============-==========================-============-=================================
+ii  bind9          1:9.18.28-0ubuntu0.24.04.1 arm64        Internet Domain Name Server
+```

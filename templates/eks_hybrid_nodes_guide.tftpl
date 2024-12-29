@@ -1,0 +1,216 @@
+# EKS Hybrid Nodes @ Ubuntu 24.04 ~ Configuration Guide
+Assumptions:
+- your VPN connection to AWS is established and routing configured
+- a client private key and certificate are available to work with IAM Roles Anywhere
+- "Accept custom role session name" option is enabled on the IAM Roles Anywhere profile (not supported by TF AWS provider v. 5.81.0)
+- EKS cluster and networking is configured for Hybrid Nodes as per [AWS documentation](https://docs.aws.amazon.com/eks/latest/userguide/hybrid-nodes-prereqs.html)
+
+## Prepare OS
+### Configure firewall
+```bash
+# Tunnel 1
+ip route add ${eks_vpc_cidr} dev Tunnel1 metric 100
+iptables -t nat -A POSTROUTING --destination ${eks_vpc_cidr} --source ${aws_vpn_tunnel1_inside_cidr} -j SNAT --to-source ${on_prem_vpn_host_ip}
+
+# Tunnel 2
+ip route add ${eks_vpc_cidr} dev Tunnel2 metric 200
+iptables -t nat -A POSTROUTING --destination ${eks_vpc_cidr} --source ${aws_vpn_tunnel2_inside_cidr} -j SNAT --to-source ${on_prem_vpn_host_ip}
+```
+
+### Install `nodeadm`
+```bash
+$ curl -OL 'https://hybrid-assets.eks.amazonaws.com/releases/latest/bin/linux/arm64/nodeadm' && chmod +x nodeadm
+
+$ nodeadm install ${eks_cluster_version} \
+  --credential-provider iam-ra \
+  --containerd-source docker \
+  --timeout 20m
+{"level":"info","ts":1734640715.8603325,"caller":"install/install.go:84","msg":"Creating package manager..."}
+{"level":"info","ts":1734640715.8607342,"caller":"install/install.go:93","msg":"Setting package manager config","containerd source":"docker"}
+{"level":"info","ts":1734640715.8608057,"caller":"install/install.go:94","msg":"Configuring package manager. This might take a while..."}
+{"level":"info","ts":1734640717.9082708,"caller":"packagemanager/packagemanager.go:141","msg":"Updating packages to refresh docker repo metadata..."}
+{"level":"info","ts":1734640723.5093489,"caller":"install/install.go:99","msg":"Validating Kubernetes version","kubernetes version":"${eks_cluster_version}"}
+{"level":"info","ts":1734640723.8298142,"caller":"install/install.go:105","msg":"Using Kubernetes version","kubernetes version":"${eks_cluster_version}.X"}
+{"level":"info","ts":1734640723.8301141,"caller":"flows/install.go:57","msg":"Installing containerd..."}
+{"level":"info","ts":1734641144.9005277,"caller":"flows/install.go:66","msg":"Installing iptables..."}
+{"level":"info","ts":1734641144.9007509,"caller":"flows/install.go:73","msg":"Installing AWS signing helper..."}
+{"level":"info","ts":1734641147.346668,"caller":"flows/install.go:91","msg":"Installing kubelet..."}
+{"level":"info","ts":1734641155.3923984,"caller":"flows/install.go:96","msg":"Installing kubectl..."}
+{"level":"info","ts":1734641161.4367528,"caller":"flows/install.go:101","msg":"Installing cni-plugins..."}
+{"level":"info","ts":1734641166.9897733,"caller":"flows/install.go:106","msg":"Installing image credential provider..."}
+{"level":"info","ts":1734641170.0715418,"caller":"flows/install.go:111","msg":"Installing IAM authenticator..."}
+{"level":"info","ts":1734641176.571622,"caller":"flows/install.go:52","msg":"Finishing up install..."}
+```
+
+### Configure OS with `nodeadm` and connect to EKS
+```bash
+$ vim nodeConfig.yaml
+
+apiVersion: node.eks.aws/v1alpha1
+kind: NodeConfig
+spec:
+  cluster:
+    name: ${eks_cluster_name}
+    region: ${aws_region}
+  hybrid:
+    iamRolesAnywhere:
+      nodeName: pi
+      trustAnchorArn: ${trust_anchor_arn}
+      profileArn: ${profile_arn}
+      roleArn: ${role_arn}
+      certificatePath: /etc/ssl/myca/certs/pi.crt
+      privateKeyPath:  /etc/ssl/myca/private/pi.key
+
+$ nodeadm config check --config-source file://nodeConfig.yaml
+{"level":"info","ts":1734640082.012425,"caller":"config/check.go:30","msg":"Checking configuration","source":"file://nodeConfig.yaml"}
+{"level":"info","ts":1734640082.0140545,"caller":"node/node.go:13","msg":"Loading configuration..","configSource":"file://nodeConfig.yaml"}
+{"level":"info","ts":1734640082.0145383,"caller":"node/node.go:23","msg":"Setting up hybrid node provider..."}
+{"level":"info","ts":1734640082.0203464,"caller":"hybrid/validator.go:42","msg":"Validating configuration..."}
+{"level":"info","ts":1734640082.0205522,"caller":"config/check.go:49","msg":"Configuration is valid"}
+
+$ nodeadm init --config-source file://nodeConfig.yaml
+{"level":"info","ts":1734642994.5201116,"caller":"init/init.go:45","msg":"Checking user is root.."}
+{"level":"info","ts":1734642994.5204072,"caller":"init/init.go:59","msg":"Loading installed components"}
+{"level":"info","ts":1734642994.5209851,"caller":"node/node.go:13","msg":"Loading configuration..","configSource":"file://nodeConfig.yaml"}
+{"level":"info","ts":1734642994.522272,"caller":"node/node.go:23","msg":"Setting up hybrid node provider..."}
+{"level":"info","ts":1734642994.5276308,"caller":"hybrid/validator.go:42","msg":"Validating configuration..."}
+{"level":"info","ts":1734642994.527845,"caller":"flows/init.go:31","msg":"Configuring Aws..."}
+{"level":"info","ts":1734642994.529094,"caller":"hybrid/configenricher.go:18","msg":"Enriching configuration..."}
+{"level":"info","ts":1734642994.529253,"caller":"hybrid/configenricher.go:25","msg":"Default options populated","defaults":{"sandboxImage":"602401143452.dkr.ecr.eu-central-1.amazonaws.com/eks/pause:3.5"}}
+{"level":"info","ts":1734642995.3457873,"caller":"hybrid/configenricher.go:32","msg":"Cluster details populated","cluster":{"name":"kamp-test-eks","region":"eu-central-1","apiServerEndpoint":"https://694ADB7297032C8D8FF334DA62657ACF.gr7.eu-central-1.eks.amazonaws.com","certificateAuthority":"LS0tLS1CRU[...]]","cidr":"172.16.0.0/16"}}
+{"level":"info","ts":1734642995.346993,"caller":"flows/init.go:41","msg":"Setting up system aspects..."}
+{"level":"info","ts":1734642995.3471117,"caller":"flows/init.go:44","msg":"Setting up system aspect..","name":"sysctl"}
+{"level":"info","ts":1734642995.3615136,"caller":"flows/init.go:48","msg":"Finished setting up system aspect","name":"sysctl"}
+{"level":"info","ts":1734642995.3616226,"caller":"flows/init.go:44","msg":"Setting up system aspect..","name":"swap"}
+{"level":"info","ts":1734642995.383806,"caller":"flows/init.go:48","msg":"Finished setting up system aspect","name":"swap"}
+{"level":"info","ts":1734642995.3839235,"caller":"flows/init.go:44","msg":"Setting up system aspect..","name":"ports"}
+{"level":"info","ts":1734642995.7328496,"caller":"system/ports.go:71","msg":"No firewall enabled on the host. Skipping setting firewall rules..."}
+{"level":"info","ts":1734642995.733,"caller":"flows/init.go:48","msg":"Finished setting up system aspect","name":"ports"}
+{"level":"info","ts":1734642995.733028,"caller":"flows/init.go:52","msg":"Configuring Pre-process daemons..."}
+{"level":"info","ts":1734642995.7330735,"caller":"flows/init.go:63","msg":"Configuring daemons..."}
+{"level":"info","ts":1734642995.7330976,"caller":"flows/init.go:67","msg":"Configuring daemon...","name":"containerd"}
+{"level":"info","ts":1734642995.733155,"caller":"containerd/config.go:44","msg":"Writing containerd config to file..","path":"/etc/containerd/config.toml"}
+{"level":"info","ts":1734642995.7339854,"caller":"flows/init.go:71","msg":"Configured daemon","name":"containerd"}
+{"level":"info","ts":1734642995.7340674,"caller":"flows/init.go:67","msg":"Configuring daemon...","name":"kubelet"}
+{"level":"info","ts":1734642996.012075,"caller":"kubelet/config.go:377","msg":"Detected kubelet version","version":"v${eks_cluster_version}.X"}
+{"level":"error","ts":1734642996.0126836,"caller":"system/resources.go:58","msg":"Nodes topology is not available, providing CPU topology","stacktrace":"github.com/aws/eks-hybrid/internal/system.GetMilliNumCores\n\tgithub.com/aws/eks-hybrid/internal/system/resources.go:58\ngithub.com/aws/eks-hybrid/internal/[...]]"}
+{"level":"info","ts":1734642996.0156326,"caller":"kubelet/config.go:466","msg":"Writing kubelet config to file..","path":"/etc/kubernetes/kubelet/config.json"}
+{"level":"info","ts":1734642996.1500459,"caller":"flows/init.go:71","msg":"Configured daemon","name":"kubelet"}
+{"level":"info","ts":1734642996.1501567,"caller":"flows/init.go:79","msg":"Ensuring daemon is running..","name":"containerd"}
+{"level":"info","ts":1734642996.1774368,"caller":"flows/init.go:83","msg":"Daemon is running","name":"containerd"}
+{"level":"info","ts":1734642996.177856,"caller":"flows/init.go:85","msg":"Running post-launch tasks..","name":"containerd"}
+{"level":"info","ts":1734642996.1783323,"caller":"containerd/sandbox.go:20","msg":"Looking up current sandbox image in containerd config.."}
+{"level":"info","ts":1734642996.3991742,"caller":"containerd/sandbox.go:32","msg":"Found sandbox image","image":"602401143452.dkr.ecr.eu-central-1.amazonaws.com/eks/pause:3.5"}
+{"level":"info","ts":1734642996.3992832,"caller":"containerd/sandbox.go:34","msg":"Fetching ECR authorization token.."}
+{"level":"info","ts":1734642996.609312,"caller":"containerd/sandbox.go:48","msg":"Pulling sandbox image..","image":"602401143452.dkr.ecr.eu-central-1.amazonaws.com/eks/pause:3.5"}
+{"level":"info","ts":1734642999.3109026,"caller":"containerd/sandbox.go:53","msg":"Finished pulling sandbox image","image-ref":"sha256:4643bd56bc8c96ac745beac2a4fc46674a9fdb1b8a90f3bac4398f97890a0a55"}
+{"level":"info","ts":1734642999.3110914,"caller":"flows/init.go:89","msg":"Finished post-launch tasks","name":"containerd"}
+{"level":"info","ts":1734642999.311211,"caller":"flows/init.go:79","msg":"Ensuring daemon is running..","name":"kubelet"}
+{"level":"info","ts":1734643000.4789748,"caller":"flows/init.go:83","msg":"Daemon is running","name":"kubelet"}
+{"level":"info","ts":1734643000.4790757,"caller":"flows/init.go:85","msg":"Running post-launch tasks..","name":"kubelet"}
+{"level":"info","ts":1734643000.4791124,"caller":"flows/init.go:89","msg":"Finished post-launch tasks","name":"kubelet"}
+
+$ systemctl status kubelet
+[...]
+Dec 28 15:23:23 pi kubelet[115814]: I1228 15:23:23.919687  115814 kubelet_node_status.go:72] "Attempting to register node" node="pi"
+Dec 28 15:23:24 pi kubelet[115814]: I1228 15:23:24.261682  115814 reflector.go:368] Caches populated for *v1.CSIDriver from k8s.io/client-go/informers/factory.go:160
+Dec 28 15:23:24 pi kubelet[115814]: I1228 15:23:24.262095  115814 reflector.go:368] Caches populated for *v1.RuntimeClass from k8s.io/client-go/informers/factory.go:160
+Dec 28 15:23:24 pi kubelet[115814]: I1228 15:23:24.288405  115814 reflector.go:368] Caches populated for *v1.Node from k8s.io/client-go/informers/factory.go:160
+Dec 28 15:23:24 pi kubelet[115814]: I1228 15:23:24.288439  115814 reflector.go:368] Caches populated for *v1.Service from k8s.io/client-go/informers/factory.go:160
+Dec 28 15:23:24 pi kubelet[115814]: I1228 15:23:24.288640  115814 reconstruct.go:205] "DevicePaths of reconstructed volumes updated"
+Dec 28 15:23:24 pi kubelet[115814]: I1228 15:23:24.323640  115814 kubelet_node_status.go:75] "Successfully registered node" node="pi"
+```
+
+### Check node status on the cluster
+> NOTE: Among other things, the EKS cluster version used for generating this guide was `1.31` and so the outputs below refer to that version.
+```bash
+$ kubectl get nodes -o wide
+NAME                                           STATUS   ROLES    AGE     VERSION               INTERNAL-IP       EXTERNAL-IP   OS-IMAGE                       KERNEL-VERSION                     CONTAINER-RUNTIME
+ip-10-88-3-112.eu-central-1.compute.internal   Ready    <none>   3h27m   v1.31.3-eks-59bf375   10.88.3.112       <none>        Amazon Linux 2023.6.20241212   6.1.119-129.201.amzn2023.aarch64   containerd://1.7.23
+ip-10-88-3-163.eu-central-1.compute.internal   Ready    <none>   3h25m   v1.31.3-eks-59bf375   10.88.3.163       <none>        Amazon Linux 2023.6.20241212   6.1.119-129.201.amzn2023.aarch64   containerd://1.7.23
+ip-10-88-3-236.eu-central-1.compute.internal   Ready    <none>   79m     v1.31.3-eks-59bf375   10.88.3.236       <none>        Amazon Linux 2023.6.20241212   6.1.119-129.201.amzn2023.aarch64   containerd://1.7.23
+ip-10-88-3-26.eu-central-1.compute.internal    Ready    <none>   3h27m   v1.31.3-eks-59bf375   10.88.3.26        <none>        Amazon Linux 2023.6.20241212   6.1.119-129.201.amzn2023.aarch64   containerd://1.7.23
+ip-10-88-4-183.eu-central-1.compute.internal   Ready    <none>   3h33m   v1.31.3-eks-59bf375   10.88.4.183       <none>        Amazon Linux 2023.6.20241212   6.1.119-129.201.amzn2023.aarch64   containerd://1.7.23
+ip-10-88-4-224.eu-central-1.compute.internal   Ready    <none>   3h27m   v1.31.3-eks-59bf375   10.88.4.224       <none>        Amazon Linux 2023.6.20241212   6.1.119-129.201.amzn2023.aarch64   containerd://1.7.23
+ip-10-88-4-51.eu-central-1.compute.internal    Ready    <none>   3h33m   v1.31.3-eks-59bf375   10.88.4.51        <none>        Amazon Linux 2023.6.20241212   6.1.119-129.201.amzn2023.aarch64   containerd://1.7.23
+pi                                             Ready    <none>   49s     v1.31.2-eks-94953ac   ${on_prem_vpn_host_ip}   <none>        Ubuntu 24.04.1 LTS             6.8.0-1017-raspi                   containerd://1.7.24
+
+$ kubectl describe node pi
+Name:               pi
+Roles:              <none>
+Labels:             beta.kubernetes.io/arch=arm64
+                    beta.kubernetes.io/os=linux
+                    eks.amazonaws.com/compute-type=hybrid
+                    eks.amazonaws.com/hybrid-credential-provider=iam-ra
+                    kubernetes.io/arch=arm64
+                    kubernetes.io/hostname=pi
+                    kubernetes.io/os=linux
+Annotations:        node.alpha.kubernetes.io/ttl: 0
+                    volumes.kubernetes.io/controller-managed-attach-detach: true
+CreationTimestamp:  Sat, 28 Dec 2024 18:16:43 +0100
+Taints:             <none>
+Unschedulable:      false
+Lease:
+  HolderIdentity:  pi
+  AcquireTime:     <unset>
+  RenewTime:       Sat, 28 Dec 2024 18:17:45 +0100
+Conditions:
+  Type             Status  LastHeartbeatTime                 LastTransitionTime                Reason                       Message
+  ----             ------  -----------------                 ------------------                ------                       -------
+  MemoryPressure   False   Sat, 28 Dec 2024 18:16:43 +0100   Sat, 28 Dec 2024 18:16:43 +0100   KubeletHasSufficientMemory   kubelet has sufficient memory available
+  DiskPressure     False   Sat, 28 Dec 2024 18:16:43 +0100   Sat, 28 Dec 2024 18:16:43 +0100   KubeletHasNoDiskPressure     kubelet has no disk pressure
+  PIDPressure      False   Sat, 28 Dec 2024 18:16:43 +0100   Sat, 28 Dec 2024 18:16:43 +0100   KubeletHasSufficientPID      kubelet has sufficient PID available
+  Ready            True    Sat, 28 Dec 2024 18:16:43 +0100   Sat, 28 Dec 2024 18:16:43 +0100   KubeletReady                 kubelet is posting ready status
+Addresses:
+  InternalIP:  ${on_prem_vpn_host_ip}
+  Hostname:    pi
+[...]
+System Info:
+  Machine ID:                 5b76cde602734eabb4cc21ed7692192d
+  System UUID:                5b76cde602734eabb4cc21ed7692192d
+  Boot ID:                    74ee2225-13bc-42f9-819c-afe39d279319
+  Kernel Version:             6.8.0-1017-raspi
+  OS Image:                   Ubuntu 24.04.1 LTS
+  Operating System:           linux
+  Architecture:               arm64
+  Container Runtime Version:  containerd://1.7.24
+  Kubelet Version:            v1.31.2-eks-94953ac
+  Kube-Proxy Version:         v1.31.2-eks-94953ac
+[...]
+```
+
+## Disclaimer
+The above has been confirmed working with Ubuntu 24.04 running on Raspberry Pi 4.
+
+```bash
+$ uname -a
+Linux pi 6.8.0-1017-raspi #18-Ubuntu SMP PREEMPT_DYNAMIC Fri Dec 6 20:45:16 UTC 2024 aarch64 aarch64 aarch64 GNU/Linux
+
+$ lsb_release -a
+Distributor ID:	Ubuntu
+Description:	Ubuntu 24.04.1 LTS
+Release:	24.04
+Codename:	noble
+
+$ nodeadm --version
+Version: v1.0.0
+
+$ kubectl version
+Client Version: v1.31.2-eks-94953ac
+Kustomize Version: v5.4.2
+
+$ containerd --version
+containerd containerd.io 1.7.24 88bf19b2105c8b17560993bee28a01ddc2f97182
+
+$ kubelet --version
+Kubernetes v1.31.2-eks-94953ac
+
+$ aws-iam-authenticator version
+{"Version":"v0.6.26","Commit":"ed7005b41b8ded3fa2828b97b44a0c8300c65ba6"}
+
+$ /etc/eks/image-credential-provider/ecr-credential-provider --version
+ecr-credential-provider version v1.31.0-3-gc8e58b8
+
+$ aws_signing_helper version
+1.2.1
+```

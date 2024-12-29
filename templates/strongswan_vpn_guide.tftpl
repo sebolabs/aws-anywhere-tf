@@ -1,0 +1,168 @@
+# Strongswan (IPSec) @ Ubuntu 24.04 ~ Site-to-Site AWS VPN Configuration Guide
+After installing `strongswan`, below are the steps that must be performed to successfully set up a VPN connection.
+
+Assumptions:
+- your Ubuntu box runs in a private network behind a router
+- your router have forwarding rules for UDP/500 and UDP/4500 with Ubuntu box as the target
+
+## Site-to-Site VPN Config
+> NOTE: Configuration below is sensitive!
+
+### ONE-OFF: Strongswan/IPsec config
+
+```bash
+cat <<EOF > /etc/ipsec.conf
+config setup
+	uniqueids = no
+
+conn Tunnel1
+	auto=start
+	left=%defaultroute
+	leftid=${on_prem_cgw_public_ip} # On-prem public IP (CGW)
+	right=${aws_vpn_tunnel1_outside_ip} # AWS VPN Tunnel 1 outside IP
+	type=tunnel
+	leftauth=psk
+	rightauth=psk
+	keyexchange=ikev2
+	ike=aes256-sha256-modp2048
+	ikelifetime=24h
+	esp=aes256-sha256-modp2048
+	lifetime=12h
+	keyingtries=%forever
+	leftsubnet=${on_prem_network_cidr} # On-prem network CIDR
+	rightsubnet=0.0.0.0/0 # AWS network CIDR
+	dpddelay=10s
+	dpdtimeout=30s
+	dpdaction=clear
+	rekey=yes
+
+conn Tunnel2
+	auto=start
+	left=%defaultroute
+	leftid=${on_prem_cgw_public_ip} # On-prem public IP (CGW)
+	right=${aws_vpn_tunnel2_outside_ip} # AWS VPN Tunnel 2 outside IP
+	type=tunnel
+	leftauth=psk
+	rightauth=psk
+	keyexchange=ikev2
+	ike=aes256-sha256-modp2048
+	ikelifetime=24h
+	esp=aes256-sha256-modp2048
+	lifetime=12h
+	keyingtries=%forever
+	leftsubnet=${on_prem_network_cidr} # On-prem network CIDR
+	rightsubnet=0.0.0.0/0 # AWS network CIDR
+	dpddelay=10s
+	dpdtimeout=30s
+	dpdaction=clear
+	rekey=yes
+EOF
+
+# Add pre-shared key for Tunnel1 authenticaation
+echo '${on_prem_cgw_public_ip} ${aws_vpn_tunnel1_outside_ip} : PSK "${aws_vpn_tunnel1_psk}"' >> /etc/ipsec.secrets
+
+# Add pre-shared key for Tunnel2 authenticaation
+echo '${on_prem_cgw_public_ip} ${aws_vpn_tunnel2_outside_ip} : PSK "${aws_vpn_tunnel2_psk}"' >> /etc/ipsec.secrets
+
+ipsec restart
+```
+
+### ONE-OFF: System config
+```bash
+# General:
+# Ensure StrongSwan does not install routes automatically
+sed -i 's/^#\?\s*install_route.*/install_route = no/' /etc/strongswan.d/charon.conf
+# Enable IP forwarding for routing between interfaces (required for VPN)
+sysctl -w net.ipv4.ip_forward=1
+# Disable XFRM (IPsec transformation) for eth0 to avoid local traffic being processed by IPsec
+sysctl -w net.ipv4.conf.eth0.disable_xfrm=1
+# Disable IPsec policies on eth0 interface for non-VPN traffic
+sysctl -w net.ipv4.conf.eth0.disable_policy=1
+
+# Tunnel 1:
+# Disable reverse path filtering for Tunnel1 to allow asymmetric routing
+sysctl -w net.ipv4.conf.Tunnel1.rp_filter=2
+# Disable IPsec policies on Tunnel1 interface to ensure proper VPN traffic flow
+sysctl -w net.ipv4.conf.Tunnel1.disable_policy=1
+
+# Tunnel2:
+# Disable reverse path filtering for Tunnel2 to allow asymmetric routing
+sysctl -w net.ipv4.conf.Tunnel2.rp_filter=2
+# Disable IPsec policies on Tunnel2 interface to ensure proper VPN traffic flow
+sysctl -w net.ipv4.conf.Tunnel2.disable_policy=1
+```
+
+### ON REBOOT: Network/firewall config (to automate)
+> NOTE: This section can be automated, e.g., with the use of the Strongswan (IPSec) `leftupdown` option.
+```bash
+# Tunnel1:
+# Create and configure the VTI interface for Tunnel1
+ip link add Tunnel1 type vti local ${on_prem_vpn_host_ip} remote ${aws_vpn_tunnel1_outside_ip} key 100
+ip addr add ${aws_vpn_tunnel1_local_cidr} remote ${aws_vpn_tunnel1_remote_cidr} dev Tunnel1
+ip link set Tunnel1 up mtu 1419
+# Add a route for the AWS VPC CIDR through Tunnel1
+ip route add ${aws_example_vpc_cidr} dev Tunnel1 metric 100 # per VPC CIDR
+# Adjust MSS for Tunnel1
+iptables -t mangle -A FORWARD -o Tunnel1 -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu
+# Mark incoming ESP packets for Tunnel1
+iptables -t mangle -A INPUT -p esp -s ${aws_vpn_tunnel1_outside_ip} -d ${on_prem_vpn_host_ip} -j MARK --set-xmark 100
+# Apply SNAT for Tunnel1 traffic
+iptables -t nat -A POSTROUTING --destination ${aws_example_vpc_cidr} --source ${aws_vpn_tunnel1_inside_cidr} -j SNAT --to-source ${on_prem_vpn_host_ip} # per VPC CIDR / Inside IPv4 CIDR
+
+# Tunnel2:
+# Create and configure the VTI interface for Tunnel2
+ip link add Tunnel2 type vti local ${on_prem_vpn_host_ip} remote ${aws_vpn_tunnel2_outside_ip} key 200
+ip addr add ${aws_vpn_tunnel2_local_cidr} remote ${aws_vpn_tunnel2_remote_cidr} dev Tunnel2
+ip link set Tunnel2 up mtu 1419
+# Add a route for the AWS VPC CIDR through Tunnel2
+ip route add ${aws_example_vpc_cidr} dev Tunnel2 metric 200 # per VPC CIDR
+# Adjust MSS for Tunnel2
+iptables -t mangle -A FORWARD -o Tunnel2 -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu
+# Mark incoming ESP packets for Tunnel2
+iptables -t mangle -A INPUT -p esp -s ${aws_vpn_tunnel2_outside_ip} -d ${on_prem_vpn_host_ip} -j MARK --set-xmark 200
+# Apply SNAT for Tunnel2 traffic
+iptables -t nat -A POSTROUTING --destination ${aws_example_vpc_cidr} --source ${aws_vpn_tunnel2_inside_cidr} -j SNAT --to-source ${on_prem_vpn_host_ip} # per VPC CIDR / Inside IPv4 CIDR
+```
+
+## [OPTIONAL] Local network for VPN traffic config
+### Network/firewall config allowing routing through VPN for any local host
+```bash
+# Tunnel1:
+# Enable NAT (Masquerade) for traffic from local network going through the VPN
+iptables -t nat -A POSTROUTING -o Tunnel1 -s ${on_prem_network_cidr} -j MASQUERADE
+# Allow traffic from local network to the VPN Tunnel1
+iptables -A FORWARD -i eth0 -o Tunnel1 -s ${on_prem_network_cidr} -j ACCEPT
+# Allow traffic from the VPN Tunnel1 to the VPC CIDR
+iptables -A FORWARD -i Tunnel1 -o eth0 -d ${aws_example_vpc_cidr} -j ACCEPT # per VPC CIDR
+
+# Tunnel2:
+# Enable NAT (Masquerade) for traffic from local network going through the VPN
+iptables -t nat -A POSTROUTING -o Tunnel2 -s ${on_prem_network_cidr} -j MASQUERADE
+# Allow traffic from local network to the VPN Tunnel2
+iptables -A FORWARD -i eth0 -o Tunnel2 -s ${on_prem_network_cidr} -j ACCEPT
+# Allow traffic from the VPN Tunnel2 to the VPC CIDR
+iptables -A FORWARD -i Tunnel2 -o eth0 -d ${aws_example_vpc_cidr} -j ACCEPT # per VPC CIDR
+```
+
+### Local host static route config
+```bash
+sudo route -n add ${aws_example_vpc_cidr} ${on_prem_vpn_host_ip} # per VPC CIDR
+```
+
+## Disclaimer
+The above has been confirmed working with Ubuntu 24.04 running on Raspberry Pi 4.
+```bash
+$ uname -a
+Linux pi 6.8.0-1016-raspi #18-Ubuntu SMP PREEMPT_DYNAMIC Fri Nov 22 11:55:16 UTC 2024 aarch64 aarch64 aarch64 GNU/Linux
+
+$ lsb_release -a
+Distributor ID:	Ubuntu
+Description:	Ubuntu 24.04.1 LTS
+Release:	24.04
+Codename:	noble
+
+$ dpkg -l strongswan
+||/ Name           Version         Architecture Description
++++-==============-===============-============-=================================
+ii  strongswan     5.9.13-2ubuntu4 all          IPsec VPN solution metapackage
+```
