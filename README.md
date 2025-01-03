@@ -1,16 +1,16 @@
 # AWS Anywhere
 ## Info
-It contains the relevant configurations required for performing different types of integrations between AWS and on-premises environment. These include:
+It contains the relevant configurations required for performing different integrations between AWS and on-premises environments. These include:
 - Site-to-Site VPN
-- DNS forwarding for AWS services/resources domain names resolution
+- DNS forwarding for AWS services/resources domain name resolution
 - IAM Roles Anywhere
 - SSM Agent
 - EKS Hybrid Nodes
 
 > NOTE: The configuration contained here was used for a Proof of Concept (PoC) and might not work out of the box for everyone. While the versions of various components used to configure individual pieces are listed in the corresponding `templates/tftpl` files, other configuration elements and peripherals may impact the setup and require additional configurations.
 
-## Story
-< link placeholder >
+## Blog
+[AWS Anywhere - a route to EKS Hybrid Nodes](https://faun.pub/aws-anywhere-a-route-to-eks-hybrid-nodes-ccc1ae703a41)
 
 ## Features
 The features covered by this module can be enabled using the following environment variables, which are set to `false` by default:
@@ -22,10 +22,10 @@ ssm_advanced_instances_tier_enabled = true
 eks_hybrid_nodes_enabled            = true
 ```
 
-> NOTE: Everything has been tested in the order specified above and applied one by one. There is a chance that randomly enabling or disabling individual features may lead to unexpected errors when running Terraform. This is due to interdependencies that have not been tested in every possible scenario.
+> NOTE: Everything has been tested in the order specified above and applied one by one. Randomly enabling or disabling individual features may lead to unexpected errors when running Terraform. This is due to interdependencies that have not been tested in every possible scenario.
 
 ## Guides
-Guides, enabled by default, are auto-generated upon Terraform apply. Look for `GUIDE_*.md` files in this folder.
+Enabled by default, guides are auto-generated upon Terraform apply. Look for `GUIDE_*.md` files in this folder.
 
 # Terraform
 <!-- BEGIN_TF_DOCS -->
